@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model booking {
+  id                           Int           @id @default(autoincrement())
+  userid                       Int
+  hallid                       Int?
+  performersid                 Int?
+  hostid                       Int?
+  ordereddate                  DateTime?     @db.Date
+  date                         DateTime      @db.Timestamp(6)
+  starttime                    String?
+  endtime                      String?
+  status                       bookingstatus
+  PlusPrice                    Int?
+  event_halls                  event_halls?  @relation(fields: [hallid], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  hosts                        hosts?        @relation("booking_hostid", fields: [hostid], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  performers                   performers?   @relation(fields: [performersid], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  User                         mruser        @relation(fields: [userid], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  hosts_hosts_bookingTobooking hosts[]       @relation("hosts_bookingTobooking")
+}
+
+model event_halls {
+  id                      Int       @id @default(autoincrement())
+  name                    String    @db.VarChar(255)
+  location                String?   @db.VarChar(255)
+  capacity                String?
+  description             String?
+  suitable_events         String[]
+  created_at              DateTime? @default(now()) @db.Timestamp(6)
+  images                  String[]
+  phonenumber             String?
+  menu                    String[]
+  parking_capacity        Int?
+  additional_informations String[]
+  informations_about_hall String[]
+  advantages              String[]
+  price                   Int[]
+  rating                  String?
+  location_link           String?
+  duureg                  String?
+  owner_id                Int?
+  booking                 booking[]
+  owner                   mruser?   @relation(fields: [owner_id], references: [id], onUpdate: NoAction)
+}
+
+model hosts {
+  id                             Int       @id @default(autoincrement())
+  name                           String?
+  email                          String?
+  phone                          String?
+  title                          String?
+  image                          String?
+  tags                           String[]
+  rating                         Float?    @db.Real
+  status                         String?
+  booking                        Int?
+  price                          Int?      @default(0)
+  intro                          String?
+  experience                     String?
+  bookings                       booking[] @relation("booking_hostid")
+  booking_hosts_bookingTobooking booking?  @relation("hosts_bookingTobooking", fields: [booking], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model performers {
+  id               Int       @id @default(autoincrement())
+  name             String    @db.VarChar(255)
+  bio              String?
+  genre            String?   @db.VarChar(255)
+  contact_email    String?   @db.VarChar(255)
+  contact_phone    String?   @db.VarChar(50)
+  performance_type String?   @db.VarChar(100)
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  image            String?
+  price            Decimal   @default(500000) @db.Decimal(12, 0)
+  popularity       Int?
+  best_songs       String[]
+  music_url        String?   @db.VarChar(500)
+  booking          booking[]
+}
+
+model mruser {
+  id          Int           @id(map: "User_pkey") @default(autoincrement())
+  name        String        @db.VarChar(255)
+  email       String        @unique(map: "User_email_key") @db.VarChar(255)
+  password    String        @db.VarChar(255)
+  role        String        @db.VarChar(50)
+  createdat   DateTime?     @default(now()) @db.Timestamp(6)
+  updatedate  DateTime?     @db.Timestamptz(6)
+  phone       String?       @db.VarChar(20)
+  avatar      String?
+  booking     booking[]
+  event_halls event_halls[]
+}
+
+model performers_new {
+  id               Int      @id @default(autoincrement())
+  name             String?  @db.VarChar(255)
+  music_url        String?
+  bio_text         String?
+  genre            String?  @db.VarChar(255)
+  contact_email    String?  @db.VarChar(255)
+  contact_phone    String?  @db.VarChar(50)
+  image            String?
+  performance_type String?  @db.VarChar(100)
+  availability     String?  @db.VarChar(100)
+  rating           Decimal? @db.Decimal
+  price            Decimal? @db.Decimal
+}
+
+model Form {
+  id              Int       @id @default(autoincrement())
+  name            String
+  hallname        String
+  location        String
+  number          String
+  email           String
+  images          String[]
+  createdat       DateTime? @default(now()) @db.Timestamp(6)
+  suitableEvents  String?
+  price           Int?
+  rating          Float?    @db.Real
+  menu            String?
+  locationlink    String?
+  parkingcapacity Int?
+  description     String?
+  additional      String?
+  abouthall       String?
+  advantages      String?
+  booking         String?
+  capacity        Int?
+  phonenumber     String?
+}
+
+enum bookingstatus {
+  pending
+  approved
+  cancelled
+}
