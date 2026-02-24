@@ -1,27 +1,32 @@
 import { NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import { verifyHallOwner } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
-    // 1️⃣ Token шалгах
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
+    const body = await req.json();
+    const { hallId, date, timeSlot, price } = body;
 
-    const token = authHeader.split(" ")[1];
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET!);
-    const ownerId = decoded.id;
-
-    // 2️⃣ Body-аас мэдээлэл авах
-    const { hallId, date, timeSlot, price } = await req.json();
-
-    if (!hallId || isNaN(Number(hallId))) {
+    const parsedHallId = Number(hallId);
+    if (!parsedHallId || isNaN(parsedHallId)) {
       return NextResponse.json({ message: "Invalid hallId" }, { status: 400 });
     }
 
-    // 3️⃣ TimeSlot mapping
+    const ownerId = await verifyHallOwner(req, parsedHallId);
+
+    const parsedDate = new Date(date);
+    if (!date || isNaN(parsedDate.getTime())) {
+      return NextResponse.json({ message: "Invalid date" }, { status: 400 });
+    }
+
+    const parsedPrice =
+      price !== undefined && price !== null ? Number(price) : null;
+
+    if (price !== undefined && price !== null && isNaN(parsedPrice!)) {
+      return NextResponse.json({ message: "Invalid price" }, { status: 400 });
+    }
+
     const timeMap: Record<string, { start: string; end: string }> = {
       am: { start: "09:00", end: "12:00" },
       pm: { start: "13:00", end: "17:00" },
@@ -32,58 +37,83 @@ export async function POST(req: Request) {
     if (!slot) {
       return NextResponse.json(
         { message: "Invalid time slot" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // 4️⃣ Owner мөн эсэхийг шалгах
-    const hall = await prisma.event_halls.findFirst({
-      where: { id: Number(hallId), owner_id: ownerId },
-    });
-    if (!hall) {
-      return NextResponse.json({ message: "Access denied" }, { status: 403 });
-    }
-
-    // 5️⃣ Тухайн date + timeSlot дээр байгаа booking-ийг хайх
-    let booking = await prisma.booking.findFirst({
-      where: {
-        hallid: Number(hallId),
-        date: new Date(date),
-        starttime: slot.start,
-        endtime: slot.end,
-      },
-    });
-
-    if (booking) {
-      // 6️⃣ Байгаа booking-ийг update хийх
-      booking = await prisma.booking.update({
-        where: { id: booking.id },
-        data: { PlusPrice: price ?? null },
+    const booking = await prisma.$transaction(async (tx) => {
+      const existing = await tx.booking.findUnique({
+        where: {
+          hallid_date_starttime_endtime: {
+            hallid: parsedHallId,
+            date: parsedDate,
+            starttime: slot.start,
+            endtime: slot.end,
+          },
+        },
       });
-    } else {
-      // 7️⃣ Байхгүй бол шинэ booking үүсгэх
-      booking = await prisma.booking.create({
+
+      if (existing) {
+        return tx.booking.update({
+          where: { id: existing.id },
+          data: { PlusPrice: parsedPrice },
+        });
+      }
+
+      return tx.booking.create({
         data: {
-          hallid: Number(hallId),
+          hallid: parsedHallId,
           userid: ownerId,
-          date: new Date(date),
+          date: parsedDate,
           starttime: slot.start,
           endtime: slot.end,
           status: "pending",
-          PlusPrice: price ?? null,
+          PlusPrice: parsedPrice,
         },
       });
+    });
+
+    return NextResponse.json(
+      {
+        message: "Booking processed successfully",
+        booking,
+      },
+      { status: 200 },
+    );
+  } catch (error: any) {
+    console.error("POST /pricing error:", error);
+
+    if (error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json({
-      message: "Booking processed successfully",
-      booking,
-    });
-  } catch (error) {
-    console.error("POST /pricing error:", error);
+    if (error.message === "INVALID_TOKEN") {
+      return NextResponse.json(
+        { message: "Invalid or expired token" },
+        { status: 401 },
+      );
+    }
+
+    if (error.message === "FORBIDDEN") {
+      return NextResponse.json({ message: "Access denied" }, { status: 403 });
+    }
+
+    if (error.message === "NOT_FOUND") {
+      return NextResponse.json({ message: "Hall not found" }, { status: 404 });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return NextResponse.json(
+          { message: "Booking already exists for this slot" },
+          { status: 409 },
+        );
+      }
+    }
+
     return NextResponse.json(
       { message: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
