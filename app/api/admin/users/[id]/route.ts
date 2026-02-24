@@ -1,23 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import Joi from "joi";
 
-// Update user
+// DTO & Validation Schema
+const userUpdateSchema = Joi.object({
+  name: Joi.string().min(1).max(50),
+  email: Joi.string().email(),
+  phone: Joi.string().pattern(/^\+?\d{10,15}$/),
+}).required();
+
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const id = parseInt((await params).id);
     const body = await request.json();
 
-    // Don't allow updating passwords directly through this endpoint
-    if (body.password) {
-      delete body.password;
+    // Joi validation → зөвхөн зөвшөөрөгдсөн талбарууд
+    const { error, value: validatedBody } = userUpdateSchema.validate(body);
+    if (error) {
+      return NextResponse.json(
+        { error: `Validation failed: ${error.message}` },
+        { status: 400 },
+      );
     }
 
+    // Prisma update → зөвшөөрөгдсөн талбарууд л дамжина
     const updatedUser = await prisma.mruser.update({
       where: { id },
-      data: body,
+      data: validatedBody,
     });
 
     return NextResponse.json({
@@ -28,15 +40,14 @@ export async function PATCH(
     console.error("Error updating user:", error);
     return NextResponse.json(
       { error: "Failed to update user" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-// Delete user
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const id = parseInt((await params).id);
@@ -59,7 +70,7 @@ export async function DELETE(
     console.error("Error deleting user:", error);
     return NextResponse.json(
       { error: "Failed to delete user" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
